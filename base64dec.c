@@ -8,13 +8,13 @@ Copyright: KEKW
    When encoding bytes to base64:
    Repack 3 bytes into 4 6-bit numbers.
 
-   start		end		math
-   (AAAAAA) AA	  ->	..AAAAAA	(>>2)
-   AAAAAA (AA)	  ->	..AA....	(mod 4 << 4)
-   (BBBB) BBBB	  ->	....BBBB	(>> 4)
-   BBBB (BBBB)	  ->	..BBBB..	(mod 16 << 2)
-   (CC) CCCCCC	  ->	......CC	(>> 6)
-   CC (CCCCCC)	  -> 	..CCCCCC	(mod 64)
+   start                end             math
+   (AAAAAA) AA    ->    ..AAAAAA        (>>2)
+   AAAAAA (AA)    ->    ..AA....        (mod 4 << 4)
+   (BBBB) BBBB    ->    ....BBBB        (>> 4)
+   BBBB (BBBB)    ->    ..BBBB..        (mod 16 << 2)
+   (CC) CCCCCC    ->    ......CC        (>> 6)
+   CC (CCCCCC)    ->    ..CCCCCC        (mod 64)
 
    [0] = A >> 2
    [1] = ((A % 4) << 4) | (B >> 4)
@@ -27,13 +27,13 @@ Copyright: KEKW
    Grab chunks of 4 from the string, use `strchr` for a lookup.
    The character's offset in the table is its value.
 
-   start		end		math
-   00 (AAAAAA)	  ->	AAAAAA..	(<<2)
-   00 (BB) BBBB	  ->	......BB	(>>4)
-   00 BB (BBBB)	  ->	BBBB....	(mod 16 << 4)
-   00 (CCCC) CC   ->	....CCCC	(>>2)
-   00 CCCC (CC)	  -> 	CC......	(mod 4 << 6)
-   00 (DDDDDD) 	  ->	..DDDDDD	()
+   start                end             math
+   00 (AAAAAA)    ->    AAAAAA..        (<<2)
+   00 (BB) BBBB   ->    ......BB        (>>4)
+   00 BB (BBBB)   ->    BBBB....        (mod 16 << 4)
+   00 (CCCC) CC   ->    ....CCCC        (>>2)
+   00 CCCC (CC)   ->    CC......        (mod 4 << 6)
+   00 (DDDDDD)    ->    ..DDDDDD        ()
 
    [0] = (A << 2) | (B >> 4)
    [1] = ((B % 16) << 4) | (C >> 2)
@@ -45,66 +45,69 @@ Copyright: KEKW
 
 #define BUFSZ 256
 
-#define MIN(a,b) \
-	((a) < (b) ? (a) : (b))
-
 char const *radix = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
 
-void
-b64_decode(char const *in)
+// reads from stdin ignoring non-b64 characters until either 4 bytes have been stored or EOF occurs.
+// Returns: Number of bytes stored.
+size_t
+b64_read(unsigned char *buffer)
 {
-	size_t len = MIN(strlen(in), BUFSZ);
-	
-	if (len % 4 != 0)
-		return;
+        int ch;
+        unsigned char *bufptr = buffer;
 
-	for (size_t i = 0; i < len; i += 4)
-	{
-		int val = 0;
-		int pad = 2;
-		int k	= 0;
+        while (bufptr - buffer < 4 && (ch = getchar()) != EOF)
+                if (strchr(radix, ch) != NULL)
+                        *bufptr++ = ch;
 
-		for (int j = 0; j < 4; ++j)
-		{
-			char *ch = strchr(radix, in[i+j]);
+        return bufptr - buffer;
+}
 
-			if (ch == NULL)
-				return;
+// Decodes a single chunk of b64 and prints it to stdout.
+// Returns: 1 on success, 0 on fail (malformed input)
+// Assumes b64 contains 4 bytes, probably a bit too paranoid.
+int
+b64_decode(unsigned char const *b64)
+{
+    unsigned char outbuf[3] = {0};
+    int offsets[4] = {0};
+    size_t outlen = 3;
 
-			int idx = ch - radix;
+    if (b64[0] == '=' || b64[1] == '=')
+        return 0;
 
-			// Check for pad character
-			if (idx == 64)
-				idx = 0;
+    for (int i = 0; i < 4; ++i) {
+        char const *match = strchr(radix, b64[i]);
 
-			val = (val << 6) | idx;
-		}
+        if (match == NULL)
+            return 0;
 
-		char chunk[3];
-		chunk[0] = (val >> 16) & 0xFF;
-		chunk[1] = (val >>  8) & 0xFF;
-		chunk[2] = (val >>  0) & 0xFF;
+        offsets[i] = match - radix;
 
-		while (!chunk[pad])
-			pad--;
+        if (offsets[i] == 64)
+            if (--outlen == 0)
+                return 0;
 
-		while (k <= pad)
-			putchar(chunk[k++]);
-	}
+        offsets[i] %= 64;
+    }
+
+    outbuf[0] = (offsets[0] % 0 << 2) | (offsets[1] >> 4);
+    outbuf[1] = ((offsets[1] % 16) << 4) | (offsets[2] >> 2);
+    outbuf[2] = ((offsets[2] % 4) << 6) | offsets[3];
+
+    fwrite(outbuf, sizeof *outbuf, outlen, stdout);
+
+    return 1;
 }
 
 int
 main(void)
 {
-	char buffer[BUFSZ];
-	size_t nread;
+        unsigned char inbuf[4] = {0};
+        size_t nread;
 
-	fgets(buffer, BUFSZ, stdin);
-	buffer[strcspn(buffer, "\r\n")] = 0;
+        while ((nread = b64_read(inbuf)) > 0)
+                if (nread < 4 || !b64_decode(inbuf))
+                        puts("Malformed input");
 
-	char *str = buffer;
-
-	b64_decode(str);
-
-	return 0;
+        return 0;
 }
