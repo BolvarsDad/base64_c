@@ -43,7 +43,7 @@ Copyright: KEKW
 #include <stdio.h>
 #include <string.h>
 
-#define BUFSZ 512
+#define BUFSZ 256
 
 #define MIN(a,b) \
 	((a) < (b) ? (a) : (b))
